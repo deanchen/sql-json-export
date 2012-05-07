@@ -1,0 +1,11 @@
+{
+  "name": "sql-denormalize",
+  "version": "0.1.0",
+  "author": "Dean Chen",
+  "description": "Utility script for denormalizing and aggregate normalized tables",
+  "dependencies" : {
+      "mysql": "*",
+      "async": "*",
+      "underscore": "*"
+  }
+}
