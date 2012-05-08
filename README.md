@@ -1,2 +1,1 @@
-sql-denormalize
-===============
+./controller.sh <thread count>
