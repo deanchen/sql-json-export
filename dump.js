@@ -3,8 +3,12 @@ var async = require('async');
 var fs = require('fs');
 var _ = require('underscore');
 
+var args = process.argv.splice(2);
+var threads = args[0];
+var worker = args[1];
+
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-var writeStream = fs.createWriteStream('output.json');
+var writeStream = fs.createWriteStream('output.json', {'flags': 'a'});
 
 var client = mysql.createClient({
     host: config.host,
@@ -21,26 +25,25 @@ var batchSize = 100000;
 var queueSize = 2;
 
 async.waterfall([
+    disableQueryCache,
     totalRows,
-    process
+    processQuery
 ], function(err, res) {
-    console.log("complete");
+    console.log(worker, " complete");
     writeStream.end();
     client.end();
 });
 
 
-function process(rows, cb1) {
+function processQuery(rows, cb1) {
     console.log("Processing " + rows + " rows");
-    writeStream.write("[");
     var q = async.queue(function(task, cb2) {
             query(task.start, task.limit, function(err, res) {
                 if (err) return console.log(err);
                 res = res.map(processName); 
 
-                var content = JSON.stringify(res);
-                content = content.substring(1, content.length - 1) + ',\n';
-                if (task.last) content = content.substring(0, content.length - 2);
+                var content = JSON.stringify(res).replace(/},/g, '}\n');
+                content = content.substring(1, content.length - 1) + '\n';
 
                 writeStream.write(content);
                 console.log("finished " + task.start);
@@ -50,20 +53,21 @@ function process(rows, cb1) {
         queueSize
     );
     q.drain = function() {
-        writeStream.write("]");
         cb1(null);
     }
 
     var tasks = [];
-    for (var i = 0; i < 20; i += batchSize) {
+    var offset = worker * batchSize;
+    for (var i = offset; i < rows; i += batchSize * threads) {
         tasks.push({start: i, limit: batchSize});
     }
-    tasks[tasks.length - 1].last = true;
 
     q.push(tasks);
 }
 
 function processName(row) {
+    row.lname = row.lname || "";
+    row.fname =row.fname || "";
     row.name = _.zip(row.lname.split('||'), row.fname.split('||'));
     delete row.lname;
     delete row.fname;
@@ -90,6 +94,16 @@ function totalRows(cb) {
         "SELECT COUNT('id') as rows FROM " + primary.name,
         function(err, res) {
             cb(err, res[0].rows);
+        }
+    );
+}
+
+function disableQueryCache(cb) {
+    client.query(
+        "SET SESSION query_cache_type = OFF;",
+        function(err, res) {
+	    if (err) return console.log(err);
+            cb(err);
         }
     );
 }
