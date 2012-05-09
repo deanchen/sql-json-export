@@ -1,0 +1,19 @@
+{
+    "host": "localhost",
+    "user": "discover",
+    "pass": "uqPpC3dOE3OTjFj1wJ5e",
+    "database": "discover",
+    "tables": {
+       "primary": {
+           "name": "papers",
+           "fields": ["id", "title", "year", "journal_id"]
+       },
+       "secondary": {
+          "name": "paper_authors",
+          "joinField": ["id", "paper_id"],
+          "fields": ["firstname", "lastname"],
+          "separator": "||" 
+       }
+    }
+}
+

@@ -1,3 +1,5 @@
+var TEST = false
+
 var mysql = require('mysql');
 var async = require('async');
 var fs = require('fs');
@@ -8,7 +10,7 @@ var threads = args[0];
 var worker = args[1];
 
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
-var writeStream = fs.createWriteStream('output.json', {'flags': 'a'});
+var writeStream = fs.createWriteStream('../dump.json', {'flags': 'a'});
 
 var client = mysql.createClient({
     host: config.host,
@@ -22,6 +24,7 @@ var primary = config.tables.primary;
 var seconary = config.tables.secondary;
 
 var batchSize = 100000;
+if (TEST) batchSize = 3
 var queueSize = 2;
 
 async.waterfall([
@@ -36,17 +39,21 @@ async.waterfall([
 
 
 function processQuery(rows, cb1) {
-    console.log("Processing " + rows + " rows");
+    console.log(worker + ": processing " + rows + " rows");
+    var startTime = new Date();
     var q = async.queue(function(task, cb2) {
             query(task.start, task.limit, function(err, res) {
                 if (err) return console.log(err);
                 res = res.map(processName); 
 
-                var content = JSON.stringify(res).replace(/},/g, '}\n');
+                var content = JSON.stringify(res).replace(/},{/g, '}\n{');
                 content = content.substring(1, content.length - 1) + '\n';
 
                 writeStream.write(content);
-                console.log("finished " + task.start);
+                var elapsed = ((new Date() - startTime)/(60 * 1000)); 
+
+                var estimate = (rows/(task.start + batchSize) - 1) * elapsed 
+                console.log(task.start + ": " + Math.round(estimate) + " minutes remaining");
                 cb2(err, content);
             }); 
         },
@@ -58,6 +65,8 @@ function processQuery(rows, cb1) {
 
     var tasks = [];
     var offset = worker * batchSize;
+    
+    if (TEST) rows = 20;
     for (var i = offset; i < rows; i += batchSize * threads) {
         tasks.push({start: i, limit: batchSize});
     }
