@@ -50,9 +50,14 @@ function processQuery(rows, cb1) {
 
                 var overloaded  = !writeStream.write(content);
                 var elapsed = ((new Date() - startTime)/(60 * 1000)); 
-
+                total += res.length;
                 var estimate = (rows/(task.start + batchSize) - 1) * elapsed 
-                console.log(task.start + ": " + Math.round(estimate) + " minutes remaining");
+                console.log(
+                    task.start + ": \n" + 
+                    "\t" + res.length + "\n" + 
+                    "\t" + Math.round(estimate) + " minutes remaining"
+                );
+
                 
                 if (overloaded) {
                     writeStream.once('drain', function() {
@@ -117,9 +122,9 @@ function dbConnect(cb) {
 
 function totalRows(cb) {
     db.query(
-        "SELECT COUNT('id') as rows FROM " + primary.name
+        "SELECT MAX(id) as maxId FROM " + primary.name
     ).execute(function(err, res) {
-        cb(err, res[0].rows);
+        cb(err, res[0].maxId);
     });
 }
 
