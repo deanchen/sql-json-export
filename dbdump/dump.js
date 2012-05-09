@@ -1,6 +1,6 @@
-var TEST = false
+var TEST = false;
 
-var mysql = require('mysql');
+var mysql = require('db-mysql');
 var async = require('async');
 var fs = require('fs');
 var _ = require('underscore');
@@ -12,13 +12,12 @@ var worker = args[1];
 var config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
 var writeStream = fs.createWriteStream('../dump.json', {'flags': 'a'});
 
-var client = mysql.createClient({
-    host: config.host,
+var db = new mysql.Database({
+    hostname: config.host,
     user: config.user,
     password: config.pass,
+    database: config.database
 });
-
-client.useDatabase(config.database);
 
 var primary = config.tables.primary;
 var seconary = config.tables.secondary;
@@ -28,13 +27,14 @@ if (TEST) batchSize = 3
 var queueSize = 2;
 
 async.waterfall([
+    dbConnect,
     disableQueryCache,
     totalRows,
     processQuery
 ], function(err, res) {
-    console.log(worker, " complete");
+    console.log("worker " + worker + " complete");
     writeStream.end();
-    client.end();
+    db.disconnect();
 });
 
 
@@ -45,16 +45,22 @@ function processQuery(rows, cb1) {
             query(task.start, task.limit, function(err, res) {
                 if (err) return console.log(err);
                 res = res.map(processName); 
-
                 var content = JSON.stringify(res).replace(/},{/g, '}\n{');
                 content = content.substring(1, content.length - 1) + '\n';
 
-                writeStream.write(content);
+                var overloaded  = !writeStream.write(content);
                 var elapsed = ((new Date() - startTime)/(60 * 1000)); 
 
                 var estimate = (rows/(task.start + batchSize) - 1) * elapsed 
                 console.log(task.start + ": " + Math.round(estimate) + " minutes remaining");
-                cb2(err, content);
+                
+                if (overloaded) {
+                    writeStream.once('drain', function() {
+                        cb2(err);
+                    }); 
+                } else {
+                    cb2(err);
+                }
             }); 
         },
         queueSize
@@ -66,7 +72,7 @@ function processQuery(rows, cb1) {
     var tasks = [];
     var offset = worker * batchSize;
     
-    if (TEST) rows = 20;
+    if (TEST) rows = 1000;
     for (var i = offset; i < rows; i += batchSize * threads) {
         tasks.push({start: i, limit: batchSize});
     }
@@ -84,7 +90,7 @@ function processName(row) {
 }
 
 function query(start, limit, cb) {
-    client.query(
+    db.query(
         "SELECT " +
         "    p.id," + 
         "    p.title," +  
@@ -92,28 +98,36 @@ function query(start, limit, cb) {
         "    p.journal_id as jid," +
         "    GROUP_CONCAT(a.firstname SEPARATOR '||') as fname, " +
         "    GROUP_CONCAT(a.lastname SEPARATOR '||') as lname " +
-        "FROM papers as p, paper_authors as a " +
-        "WHERE p.id = a.paper_id GROUP BY p.id LIMIT " + start + ", " + limit,
-        cb
-    );
+        "FROM papers as p " + 
+        "LEFT JOIN paper_authors as a " +
+        "ON p.id = a.paper_id " +
+        "WHERE p.id >= " + start + " " +
+        "AND p.id < " + (start + limit) + " " +
+        "GROUP BY p.id"
+    ).execute(cb);
 }
 
+function dbConnect(cb) {
+    db.connect(function(err) {
+        if (err) return console.log(err);
+        cb(err);
+    });
+}
+
+
 function totalRows(cb) {
-    client.query(
-        "SELECT COUNT('id') as rows FROM " + primary.name,
-        function(err, res) {
-            cb(err, res[0].rows);
-        }
-    );
+    db.query(
+        "SELECT COUNT('id') as rows FROM " + primary.name
+    ).execute(function(err, res) {
+        cb(err, res[0].rows);
+    });
 }
 
 function disableQueryCache(cb) {
-    client.query(
-        "SET SESSION query_cache_type = OFF;",
-        function(err, res) {
-	    if (err) return console.log(err);
-            cb(err);
-        }
-    );
+    db.query(
+        "SET SESSION query_cache_type = OFF;"
+    ).execute(function(err, res) {
+        if (err) return console.log(err);
+        cb(err);
+    });
 }
-

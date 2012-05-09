@@ -5,6 +5,7 @@
   "description": "Utility script for denormalizing and aggregate normalized tables",
   "dependencies" : {
       "mysql": "*",
+      "db-mysql": "*",
       "async": "*",
       "underscore": "*"
   }
