@@ -1,4 +1,5 @@
 #!/bin/bash
+rm ../dump.json
 WORKERS=$1
 for (( i=0; i <= ${WORKERS} - 1; i++ )) 
 do
